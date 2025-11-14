@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 from scapy.all import IP, ICMP, sr1
+import requests
 
 app = Flask(__name__)
 
@@ -31,13 +32,48 @@ def client_info():
 
 
 @app.route("/ping/<target>", methods=["GET"])
-def ping_host(target):
+def http_ping(target):
+    """HTTP-based "ping" that works on typical hosted environments.
+
+    It tries an HTTPS GET to the given host (e.g. /ping/google.com) and reports
+    whether it was reachable and how long it took.
+    """
+    # Build a URL; if the user already includes a scheme, respect it.
+    if target.startswith("http://") or target.startswith("https://"):
+        url = target
+    else:
+        url = f"https://{target}"
+
+    try:
+        resp = requests.get(url, timeout=3)
+        return jsonify(
+            {
+                "target": target,
+                "url": url,
+                "reachable": True,
+                "status_code": resp.status_code,
+                "rtt_ms": resp.elapsed.total_seconds() * 1000,
+            }
+        ), 200
+    except Exception as e:
+        return jsonify(
+            {
+                "target": target,
+                "url": url,
+                "reachable": False,
+                "error": str(e),
+            }
+        ), 200
+
+
+@app.route("/scapy-ping/<target>", methods=["GET"])
+def scapy_ping(target):
     """Use Scapy to send a single ICMP echo request to the target.
 
-    Example: GET /ping/8.8.8.8
+    NOTE: This usually requires raw-socket privileges and will *not* work on
+    most serverless/hosted environments like Vercel. Intended for local use.
     """
     try:
-        # Send one ICMP Echo Request (like ping)
         reply = sr1(
             IP(dst=target) / ICMP(),
             timeout=1,
