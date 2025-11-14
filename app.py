@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from scapy.all import IP, ICMP, sr1
 
 app = Flask(__name__)
 
@@ -27,6 +28,46 @@ def client_info():
     }
 
     return jsonify(data)
+
+
+@app.route("/ping/<target>", methods=["GET"])
+def ping_host(target):
+    """Use Scapy to send a single ICMP echo request to the target.
+
+    Example: GET /ping/8.8.8.8
+    """
+    try:
+        # Send one ICMP Echo Request (like ping)
+        reply = sr1(
+            IP(dst=target) / ICMP(),
+            timeout=1,
+            verbose=0,
+        )
+
+        if reply is None:
+            return jsonify(
+                {
+                    "target": target,
+                    "reachable": False,
+                    "message": "No reply",
+                }
+            ), 200
+        else:
+            rtt_ms = None
+            if hasattr(reply, "time") and hasattr(reply, "sent_time"):
+                rtt_ms = (reply.time - reply.sent_time) * 1000
+
+            return jsonify(
+                {
+                    "target": target,
+                    "reachable": True,
+                    "source": reply.src,
+                    "rtt_ms": rtt_ms,
+                }
+            ), 200
+
+    except Exception as e:
+        return jsonify({"target": target, "reachable": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":
